@@ -1,0 +1,130 @@
+{% extends 'base.html' %}
+
+{% block title %}Dashboard - Datadog Demo Pipeline{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-8">
+        <h2><i class="fas fa-tachometer-alt me-2"></i>Pipeline Dashboard</h2>
+        <p class="text-muted">Monitor and manage your data processing pipelines</p>
+    </div>
+    <div class="col-md-4 text-end">
+        <form action="{% url 'trigger_pipeline' %}" method="POST">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-primary">
+                <i class="fas fa-play me-2"></i>Trigger New Pipeline
+            </button>
+        </form>
+    </div>
+</div>
+
+<div class="card mb-4">
+    <div class="card-header bg-white">
+        <h5 class="mb-0"><i class="fas fa-history me-2"></i>Recent Pipeline Runs</h5>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Name</th>
+                        <th>Status</th>
+                        <th>Created</th>
+                        <th>Records</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for pipeline in pipelines %}
+                    <tr>
+                        <td>{{ pipeline.id }}</td>
+                        <td>{{ pipeline.name }}</td>
+                        <td>
+                            {% if pipeline.status == 'pending' %}
+                            <span class="badge bg-secondary pipeline-status-badge">Pending</span>
+                            {% elif pipeline.status == 'running' %}
+                            <span class="badge bg-primary pipeline-status-badge">Running</span>
+                            {% elif pipeline.status == 'completed' %}
+                            <span class="badge bg-success pipeline-status-badge">Completed</span>
+                            {% elif pipeline.status == 'failed' %}
+                            <span class="badge bg-danger pipeline-status-badge">Failed</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ pipeline.created_at|date:"M d, Y H:i" }}</td>
+                        <td>{{ pipeline.records_processed }}</td>
+                        <td>
+                            <a href="{% url 'pipeline_detail' pipeline.id %}" class="btn btn-sm btn-outline-primary">
+                                <i class="fas fa-eye"></i> View
+                            </a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="6" class="text-center py-4">
+                            <p class="mb-0 text-muted">No pipeline runs yet. Click "Trigger New Pipeline" to start.</p>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header bg-white">
+                <h5 class="mb-0"><i class="fas fa-info-circle me-2"></i>About This Demo</h5>
+            </div>
+            <div class="card-body">
+                <p>This demonstration showcases a complete data pipeline monitored with Datadog, including:</p>
+                <ul>
+                    <li>Data generation and ingestion</li>
+                    <li>Processing with PySpark</li>
+                    <li>Transformation with dbt-core</li>
+                    <li>Task queuing with Celery and RabbitMQ</li>
+                    <li>Orchestration with Prefect</li>
+                    <li>Storage in PostgreSQL</li>
+                    <li>Web interface with Django</li>
+                </ul>
+                <p>Each pipeline run demonstrates the full lifecycle of data processing and allows you to visualize how Datadog can monitor the entire stack.</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header bg-white">
+                <h5 class="mb-0"><i class="fas fa-chart-bar me-2"></i>Metrics Overview</h5>
+            </div>
+            <div class="card-body">
+                <div class="row mb-3">
+                    <div class="col-6">
+                        <div class="card bg-light">
+                            <div class="card-body text-center">
+                                <h5 class="mb-0">{{ pipelines.count }}</h5>
+                                <small class="text-muted">Total Pipelines</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="card bg-light">
+                            <div class="card-body text-center">
+                                <h5 class="mb-0">{{ pipelines.filter.status="completed"|length }}</h5>
+                                <small class="text-muted">Completed</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="text-center">
+                    <p class="text-muted mb-0">
+                        <i class="fas fa-info-circle me-1"></i>
+                        In a real scenario, this would display metrics from Datadog.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

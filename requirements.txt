@@ -1,0 +1,30 @@
+# Django and web
+Django
+psycopg2-binary
+djangorestframework
+django-filter
+whitenoise
+pika
+
+# Celery & RabbitMQ
+celery
+kombu
+
+# Prefect
+prefect
+prefect-dbt
+
+# dbt
+dbt-core
+dbt-postgres
+
+# PySpark
+pyspark
+
+# Data processing
+pandas
+numpy
+faker
+
+# Monitoring (Datadog)
+ddtrace

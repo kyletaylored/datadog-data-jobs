@@ -1,0 +1,23 @@
+version: 2
+
+sources:
+  - name: sample_data
+    description: "Sample data for the Datadog demo"
+    tables:
+      - name: raw_items
+        description: "Raw item data"
+        columns:
+          - name: id
+            description: "Unique identifier for the item"
+          - name: name
+            description: "Item name"
+          - name: category
+            description: "Item category (A, B, C, D)"
+          - name: value
+            description: "Item unit value"
+          - name: quantity
+            description: "Item quantity"
+          - name: is_active
+            description: "Whether the item is active"
+          - name: created_at
+            description: "When the item was created"

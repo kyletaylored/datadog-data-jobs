@@ -1,0 +1,271 @@
+services:
+  # PostgreSQL Database
+  db:
+    image: postgres:13
+    environment:
+      POSTGRES_DB: ${DATABASE_NAME:-datadog}
+      POSTGRES_USER: ${DATABASE_USERNAME:-datadog}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-datadog}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USERNAME:-datadog}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    labels:
+      com.datadoghq.ad.logs: '[{"source": "postgresql", "service": "postgres"}]'
+    env_file:
+      - .env
+
+  # RabbitMQ for Celery
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmqctl", "status"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+    labels:
+      com.datadoghq.ad.logs: '[{"source": "rabbitmq", "service": "rabbitmq"}]'
+
+  # Spark Master
+  spark-master:
+    image: bitnami/spark:3.3.0
+    environment:
+      - SPARK_MODE=master
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+    ports:
+      - "8080:8080"
+      - "7077:7077"
+
+  # Spark Worker
+  spark-worker:
+    image: bitnami/spark:3.3.0
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_MEMORY=1G
+      - SPARK_WORKER_CORES=1
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+    depends_on:
+      - spark-master
+    labels:
+      com.datadoghq.ad.logs: '[{"source": "spark", "service": "spark-worker"}]'
+
+  # Initial Database Setup
+  init-db:
+    build: .
+    user: root
+    entrypoint: []
+    command: bash -c "chmod +x /app/init-db.sh && /app/init-db.sh"
+    volumes:
+      - .:/app
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_NAME: ${DATABASE_NAME:-datadog}
+      DATABASE_USERNAME: ${DATABASE_USERNAME:-datadog}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:-datadog}
+      DATABASE_HOST: ${DATABASE_HOST:-db}
+      DATABASE_PORT: ${DATABASE_PORT:-5432}
+    env_file:
+      - .env
+
+  # Prefect Server and UI
+  prefect-server:
+    image: prefecthq/prefect:2-python3.9
+    command: prefect server start
+    ports:
+      - "4200:4200"
+    volumes:
+      - prefect_data:/root/.prefect
+    environment:
+      - PREFECT_API_URL=http://prefect-server:4200/api
+      - PREFECT_ORION_DATABASE_CONNECTION_URL=${PREFECT_ORION_DATABASE_CONNECTION_URL:-postgresql+asyncpg://datadog:datadog@db:5432/datadog}
+      - PREFECT_SERVER_API_HOST=0.0.0.0
+    depends_on:
+      db:
+        condition: service_healthy
+      init-db:
+        condition: service_completed_successfully
+    user: root
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4200/api/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+    env_file:
+      - .env
+
+  # Django App Setup
+  init-app:
+    build: .
+    command: >
+      bash -c "
+        python app/manage.py migrate &&
+        python app/manage.py collectstatic --noinput &&
+        python app/dashboard/init_db.py &&
+        python app/manage.py createsuperuser --noinput --username ${DJANGO_SUPERUSER_USERNAME:-admin} --email ${DJANGO_SUPERUSER_EMAIL:-admin@example.com} || true
+      "
+    volumes:
+      - .:/app
+    depends_on:
+      - init-db
+    environment:
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-your_secret_key_here}
+      DJANGO_SUPERUSER_PASSWORD: ${DJANGO_SUPERUSER_PASSWORD:-datadog}
+      DJANGO_SUPERUSER_USERNAME: ${DJANGO_SUPERUSER_USERNAME:-admin}
+      DJANGO_SUPERUSER_EMAIL: ${DJANGO_SUPERUSER_EMAIL:-admin@example.com}
+      DATABASE_ENGINE: ${DATABASE_ENGINE:-django.db.backends.postgresql}
+      DATABASE_NAME: ${DATABASE_NAME:-datadog}
+      DATABASE_USERNAME: ${DATABASE_USERNAME:-datadog}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:-datadog}
+      DATABASE_HOST: ${DATABASE_HOST:-db}
+      DATABASE_PORT: ${DATABASE_PORT:-5432}
+    env_file:
+      - .env
+
+  # Web Application (Django)
+  webapp:
+    build: .
+    container_name: datadog-demo-web
+    command: gunicorn --bind 0.0.0.0:8000 --workers 3 core.wsgi:application
+    volumes:
+      - .:/app
+      - ./data:/app/data
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      init-app:
+        condition: service_completed_successfully
+    environment:
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-your_secret_key_here}
+      DEBUG: ${DEBUG:-True}
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1}
+      DATABASE_ENGINE: ${DATABASE_ENGINE:-django.db.backends.postgresql}
+      DATABASE_NAME: ${DATABASE_NAME:-datadog}
+      DATABASE_USERNAME: ${DATABASE_USERNAME:-datadog}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:-datadog}
+      DATABASE_HOST: ${DATABASE_HOST:-db}
+      DATABASE_PORT: ${DATABASE_PORT:-5432}
+      DD_ENV: ${DD_ENV:-demo}
+      DD_SERVICE: ${DD_SERVICE:-datadog-demo}
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Celery Worker
+  celery-worker:
+    build: .
+    command: celery -A worker.celery_app worker --loglevel=info
+    volumes:
+      - .:/app
+      - ./data:/app/data
+    depends_on:
+      - rabbitmq
+      - db
+      - init-app
+    environment:
+      DATABASE_ENGINE: ${DATABASE_ENGINE:-django.db.backends.postgresql}
+      DATABASE_NAME: ${DATABASE_NAME:-datadog}
+      DATABASE_USERNAME: ${DATABASE_USERNAME:-datadog}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:-datadog}
+      DATABASE_HOST: ${DATABASE_HOST:-db}
+      DATABASE_PORT: ${DATABASE_PORT:-5432}
+      DD_ENV: ${DD_ENV:-demo}
+      DD_SERVICE: ${DD_SERVICE:-datadog-demo-worker}
+    env_file:
+      - .env
+
+  # Prefect Agent & Flow Runner
+  prefect-agent:
+    build: .
+    command: prefect agent start -q default
+    volumes:
+      - .:/app
+      - ./data:/app/data
+      - prefect_data:/root/.prefect
+    depends_on:
+      - prefect-server
+      - db
+      - spark-master
+      - init-app
+    user: root
+    environment:
+      DATABASE_ENGINE: ${DATABASE_ENGINE:-django.db.backends.postgresql}
+      DATABASE_NAME: ${DATABASE_NAME:-datadog}
+      DATABASE_USERNAME: ${DATABASE_USERNAME:-datadog}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:-datadog}
+      DATABASE_HOST: ${DATABASE_HOST:-db}
+      DATABASE_PORT: ${DATABASE_PORT:-5432}
+      DD_ENV: ${DD_ENV:-demo}
+      DD_SERVICE: ${DD_SERVICE:-datadog-demo-prefect}
+      PREFECT_API_URL: http://prefect-server:4200/api
+    env_file:
+      - .env
+
+  # Datadog Agent (optional - only runs if DD_API_KEY is set)
+  datadog-agent:
+    image: gcr.io/datadoghq/agent:7
+    container_name: datadog-agent
+    pid: "host"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /proc/:/host/proc/:ro
+      - /sys/fs/cgroup/:/host/sys/fs/cgroup:ro
+      - /etc/os-release:/host/etc/os-release:ro
+    environment:
+      - DD_API_KEY=${DD_API_KEY:-}
+      - DD_ENV=${DD_ENV:-demo}
+      - DD_SITE=${DD_SITE:-datadoghq.com}
+      - DD_LOGS_ENABLED=true
+      - DD_APM_ENABLED=true
+      - DD_LOGS_CONFIG_CONTAINER_COLLECT_ALL=true
+      - DD_CONTAINER_EXCLUDE="name:datadog-agent"
+      - DD_HOSTNAME=${HOSTNAME:-datadog-data-jobs}
+      - DD_HOSTNAME_TRUST_UTS_NAMESPACE=true
+      - DD_APM_NON_LOCAL_TRAFFIC=true
+      - DD_DOGSTATSD_NON_LOCAL_TRAFFIC=true
+    privileged: true
+    healthcheck:
+      test: ["CMD", "agent", "health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    depends_on:
+      - db
+      - rabbitmq
+      - webapp
+      - celery-worker
+    # Only start the agent if an API key is provided
+    profiles:
+      - with-datadog
+
+volumes:
+  postgres_data:
+  rabbitmq_data:
+  prefect_data:

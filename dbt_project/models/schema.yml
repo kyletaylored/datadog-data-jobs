@@ -1,0 +1,58 @@
+version: 2
+
+models:
+  - name: stg_items
+    description: "Staged item data"
+    columns:
+      - name: item_id
+        description: "Unique identifier for the item"
+        tests:
+          - unique
+          - not_null
+      - name: item_name
+        description: "Item name"
+      - name: category
+        description: "Item category (A, B, C, D)"
+      - name: item_value
+        description: "Item unit value"
+      - name: item_quantity
+        description: "Item quantity"
+      - name: is_active
+        description: "Whether the item is active"
+      - name: created_at
+        description: "When the item was created"
+      - name: discount_factor
+        description: "Discount factor based on category"
+      - name: processed_at
+        description: "When the record was processed"
+
+  - name: item_metrics
+    description: "Item metrics for business analysis"
+    columns:
+      - name: item_id
+        description: "Unique identifier for the item"
+        tests:
+          - unique
+          - not_null
+      - name: item_name
+        description: "Item name"
+      - name: category
+        description: "Item category (A, B, C, D)"
+      - name: item_value
+        description: "Item unit value"
+      - name: item_quantity
+        description: "Item quantity"
+      - name: total_value
+        description: "Total value (value * quantity)"
+      - name: discounted_value
+        description: "Discounted value based on category"
+      - name: is_active
+        description: "Whether the item is active"
+      - name: pricing_tier
+        description: "Pricing tier based on total value"
+      - name: created_at
+        description: "When the item was created"
+      - name: processed_at
+        description: "When the record was processed"
+      - name: transformed_at
+        description: "When the record was transformed"
