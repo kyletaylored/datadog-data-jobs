@@ -1,13 +1,13 @@
-{% extends 'base.html' %}
+{% extends "base.html" %}
 
-{% block title %}Pipeline Details - Datadog Demo Pipeline{% endblock %}
+{% block title %}Pipeline Details - Datadog Data Pipeline Demo{% endblock %}
 
 {% block content %}
 <div class="row mb-4">
     <div class="col-md-8">
         <nav aria-label="breadcrumb">
             <ol class="breadcrumb">
-                <li class="breadcrumb-item"><a href="{% url 'index' %}">Dashboard</a></li>
+                <li class="breadcrumb-item"><a href="/">Dashboard</a></li>
                 <li class="breadcrumb-item active">Pipeline {{ pipeline.id }}</li>
             </ol>
         </nav>
@@ -15,11 +15,10 @@
         <p class="text-muted">{{ pipeline.name }}</p>
     </div>
     <div class="col-md-4 text-end">
-        <a href="{% url 'index' %}" class="btn btn-outline-secondary me-2">
+        <a href="/" class="btn btn-outline-secondary me-2">
             <i class="fas fa-arrow-left me-1"></i>Back
         </a>
-        <form action="{% url 'trigger_pipeline' %}" method="POST" class="d-inline">
-            {% csrf_token %}
+        <form action="/trigger-pipeline" method="POST" class="d-inline">
             <button type="submit" class="btn btn-primary">
                 <i class="fas fa-play me-1"></i>Run New Pipeline
             </button>
@@ -51,12 +50,12 @@
 
                 <div class="mb-3">
                     <label class="form-label text-muted">Created</label>
-                    <div>{{ pipeline.created_at|date:"M d, Y H:i:s" }}</div>
+                    <div>{{ pipeline.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</div>
                 </div>
 
                 <div class="mb-3">
                     <label class="form-label text-muted">Last Updated</label>
-                    <div>{{ pipeline.updated_at|date:"M d, Y H:i:s" }}</div>
+                    <div>{{ pipeline.updated_at.strftime('%Y-%m-%d %H:%M:%S') }}</div>
                 </div>
 
                 <div class="mb-3">
@@ -87,8 +86,15 @@
 
                 {% if pipeline.error_message %}
                 <div class="mb-3">
-                    <label class="form-label text-muted">Error Message</label>
-                    <div class="alert alert-danger">{{ pipeline.error_message }}</div>
+                    <label class="form-label text-muted">{% if pipeline.status == 'failed' %}Error Message{% else %}Status Message{% endif %}</label>
+                    <div class="{% if pipeline.status == 'failed' %}alert alert-danger{% else %}alert alert-info{% endif %}">
+                        {% if pipeline.status == 'failed' %}
+                        <i class="fas fa-exclamation-triangle me-1"></i>
+                        {% else %}
+                        <i class="fas fa-info-circle me-1"></i>
+                        {% endif %}
+                        {{ pipeline.error_message }}
+                    </div>
                 </div>
                 {% endif %}
             </div>
@@ -100,16 +106,30 @@
             </div>
             <div class="card-body">
                 <p class="text-muted text-center mb-2">Stage Execution Time (seconds)</p>
-                <div class="progress mb-3" style="height: 25px;">
-                    {% for stage in stages %}
-                        {% if stage.execution_time_seconds %}
-                            <div class="progress-bar {% if stage.status == 'failed' %}bg-danger{% endif %}" 
-                                 style="width: {{ stage.execution_time_seconds|floatformat:0 }}%;" 
-                                 title="{{ stage.name }}: {{ stage.execution_time_seconds|floatformat:2 }}s">
-                                {{ stage.name }}
-                            </div>
-                        {% endif %}
-                    {% endfor %}
+                <div class="mb-3">
+                    {% set total_execution_time = stages|map(attribute='execution_time_seconds')|reject('none')|sum %}
+                    {% if total_execution_time > 0 %}
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <span class="text-muted small">Total time: {{ total_execution_time|round(2) }}s</span>
+                        </div>
+                        {% for stage in stages %}
+                            {% if stage.execution_time_seconds %}
+                                <div class="d-flex justify-content-between align-items-center mb-1">
+                                    <span class="text-muted small">{{ stage.name }}</span>
+                                    <span class="text-muted small">{{ stage.execution_time_seconds|round(2) }}s ({{ (stage.execution_time_seconds / total_execution_time * 100)|round(1) }}%)</span>
+                                </div>
+                                <div class="progress mb-2" style="height: 10px;">
+                                    {% set percentage = (stage.execution_time_seconds / total_execution_time * 100)|round %}
+                                    <div class="progress-bar {% if stage.status == 'failed' %}bg-danger{% elif stage.status == 'completed' %}bg-success{% else %}bg-primary{% endif %}" 
+                                         style="width: {{ percentage if percentage > 5 else 5 }}%;" 
+                                         title="{{ stage.name }}: {{ stage.execution_time_seconds|round(2) }}s ({{ percentage }}%)">
+                                    </div>
+                                </div>
+                            {% endif %}
+                        {% endfor %}
+                    {% else %}
+                        <p class="text-muted text-center">No execution time data available yet.</p>
+                    {% endif %}
                 </div>
                 <div class="text-center">
                     <p class="text-muted mb-0">
@@ -148,7 +168,7 @@
                             {% if stage.started_at %}
                             <small class="text-muted">
                                 <i class="fas fa-clock me-1"></i>
-                                Started: {{ stage.started_at|date:"M d, Y H:i:s" }}
+                                Started: {{ stage.started_at.strftime('%Y-%m-%d %H:%M:%S') }}
                             </small>
                             {% endif %}
                             
@@ -156,7 +176,7 @@
                             <br>
                             <small class="text-muted">
                                 <i class="fas fa-check-circle me-1"></i>
-                                Completed: {{ stage.completed_at|date:"M d, Y H:i:s" }}
+                                Completed: {{ stage.completed_at.strftime('%Y-%m-%d %H:%M:%S') }}
                             </small>
                             {% endif %}
                             
@@ -164,16 +184,23 @@
                             <br>
                             <small class="text-muted">
                                 <i class="fas fa-stopwatch me-1"></i>
-                                Duration: {{ stage.execution_time_seconds|floatformat:2 }} seconds
+                                Duration: {{ stage.execution_time_seconds|round(2) }} seconds
                             </small>
                             {% endif %}
                             
                             {% if stage.error_message %}
                             <div class="mt-2">
+                                {% if stage.status == 'failed' %}
                                 <div class="alert alert-danger mb-0">
                                     <i class="fas fa-exclamation-triangle me-1"></i>
                                     {{ stage.error_message }}
                                 </div>
+                                {% else %}
+                                <div class="alert alert-info mb-0">
+                                    <i class="fas fa-info-circle me-1"></i>
+                                    {{ stage.error_message }}
+                                </div>
+                                {% endif %}
                             </div>
                             {% endif %}
                         </div>
@@ -189,7 +216,7 @@
 {% block extra_js %}
 <script>
     // Auto-refresh the page every 5 seconds if pipeline is running
-    {% if (pipeline.status == 'running') or (pipeline.status == 'pending') %}
+    {% if pipeline.status == 'running' or pipeline.status == 'pending' %}
     setTimeout(function() {
         location.reload();
     }, 5000);

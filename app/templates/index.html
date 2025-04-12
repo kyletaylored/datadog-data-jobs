@@ -1,6 +1,6 @@
-{% extends 'base.html' %}
+{% extends "base.html" %}
 
-{% block title %}Dashboard - Datadog Demo Pipeline{% endblock %}
+{% block title %}Dashboard - Datadog Data Pipeline Demo{% endblock %}
 
 {% block content %}
 <div class="row mb-4">
@@ -9,8 +9,7 @@
         <p class="text-muted">Monitor and manage your data processing pipelines</p>
     </div>
     <div class="col-md-4 text-end">
-        <form action="{% url 'trigger_pipeline' %}" method="POST">
-            {% csrf_token %}
+        <form action="/trigger-pipeline" method="POST">
             <button type="submit" class="btn btn-primary">
                 <i class="fas fa-play me-2"></i>Trigger New Pipeline
             </button>
@@ -51,15 +50,15 @@
                             <span class="badge bg-danger pipeline-status-badge">Failed</span>
                             {% endif %}
                         </td>
-                        <td>{{ pipeline.created_at|date:"M d, Y H:i" }}</td>
+                        <td>{{ pipeline.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
                         <td>{{ pipeline.records_processed }}</td>
                         <td>
-                            <a href="{% url 'pipeline_detail' pipeline.id %}" class="btn btn-sm btn-outline-primary">
+                            <a href="/pipeline/{{ pipeline.id }}" class="btn btn-sm btn-outline-primary">
                                 <i class="fas fa-eye"></i> View
                             </a>
                         </td>
                     </tr>
-                    {% empty %}
+                    {% else %}
                     <tr>
                         <td colspan="6" class="text-center py-4">
                             <p class="mb-0 text-muted">No pipeline runs yet. Click "Trigger New Pipeline" to start.</p>
@@ -87,7 +86,6 @@
                     <li>Task queuing with Celery and RabbitMQ</li>
                     <li>Orchestration with Prefect</li>
                     <li>Storage in PostgreSQL</li>
-                    <li>Web interface with Django</li>
                 </ul>
                 <p>Each pipeline run demonstrates the full lifecycle of data processing and allows you to visualize how Datadog can monitor the entire stack.</p>
             </div>
@@ -103,7 +101,7 @@
                     <div class="col-6">
                         <div class="card bg-light">
                             <div class="card-body text-center">
-                                <h5 class="mb-0">{{ pipelines.count }}</h5>
+                                <h5 class="mb-0">{{ pipelines|length }}</h5>
                                 <small class="text-muted">Total Pipelines</small>
                             </div>
                         </div>
@@ -111,7 +109,15 @@
                     <div class="col-6">
                         <div class="card bg-light">
                             <div class="card-body text-center">
-                                <h5 class="mb-0">{{ pipelines.filter.status="completed"|length }}</h5>
+                                <h5 class="mb-0">
+                                    {% set completed = 0 %}
+                                    {% for p in pipelines %}
+                                        {% if p.status == 'completed' %}
+                                            {% set completed = completed + 1 %}
+                                        {% endif %}
+                                    {% endfor %}
+                                    {{ completed }}
+                                </h5>
                                 <small class="text-muted">Completed</small>
                             </div>
                         </div>

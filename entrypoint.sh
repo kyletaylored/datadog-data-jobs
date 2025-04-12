@@ -64,10 +64,25 @@ if [[ "$@" == *"runserver"* ]] || [[ "$@" == *"gunicorn"* ]]; then
   python app/dashboard/init_db.py
 fi
 
-# Initialize a Prefect server if running the agent
-if [[ "$@" == *"prefect agent"* ]]; then
-  echo "Initializing Prefect..."
-  prefect config set PREFECT_API_URL=http://prefect-server:4200/api
+# This snippet should be added to your entrypoint.sh script
+# It ensures that container DNS resolution is working properly
+
+# Check if prefect-server resolves properly
+if ! ping -c 1 prefect-server > /dev/null 2>&1; then
+    echo "Adding prefect-server to /etc/hosts..."
+    # Find the IP of the prefect-server container via Docker DNS
+    PREFECT_IP=$(getent hosts prefect-server | awk '{ print $1 }')
+    if [ -z "$PREFECT_IP" ]; then
+        echo "Could not resolve prefect-server IP automatically"
+        # Use Docker's internal network gateway as fallback
+        PREFECT_IP=$(ip route | grep default | awk '{print $3}')
+        if [ -z "$PREFECT_IP" ]; then
+            echo "Using 127.0.0.1 as fallback for prefect-server"
+            PREFECT_IP="127.0.0.1"
+        fi
+    fi
+    echo "$PREFECT_IP prefect-server" >> /etc/hosts
+    echo "Updated /etc/hosts with prefect-server entry: $PREFECT_IP"
 fi
 
 echo "Entrypoint script completed, starting service..."

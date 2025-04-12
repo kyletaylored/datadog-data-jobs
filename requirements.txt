@@ -1,14 +1,19 @@
-# Django and web
-Django
+# FastAPI and web server
+fastapi
+uvicorn
+jinja2
+python-multipart
+aiofiles
+
+# Database
 psycopg2-binary
-djangorestframework
-django-filter
-whitenoise
-pika
+sqlalchemy
+alembic
 
 # Celery & RabbitMQ
 celery
 kombu
+pika
 
 # Prefect
 prefect
