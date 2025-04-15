@@ -2,24 +2,92 @@
 
 This project demonstrates how to use Datadog to monitor a Python-based data processing stack. The demo includes a fully functional data pipeline that simulates real-world data processing using several popular technologies.
 
-## Architecture
+## Architecture and Flow Diagram
 
-The demo simulates a complete data pipeline with the following components:
+The demo simulates a complete end-to-end data pipeline with the following components and flow:
 
-- **FastAPI**: For web interface and API
-- **Prefect**: For workflow orchestration
-- **PostgreSQL**: For data storage
-- **PySpark**: For distributed data processing
-- **Celery & RabbitMQ**: For task queuing
-- **Datadog**: For monitoring and observability
+```mermaid
+graph TD
+    subgraph "Web Interface & API"
+        A[FastAPI Web App] --> |Trigger Pipeline| B[Database: PostgreSQL]
+        A --> |Monitor Status| B
+    end
 
-The pipeline consists of these stages:
+    subgraph "Orchestration"
+        C[Prefect Server] <--> |Manage Flows| D[Prefect Worker]
+        A --> |Create Flow Run| C
+    end
 
-1. **Data Generation**: Creates random structured data
-2. **Data Ingestion**: Loads data into the processing pipeline
-3. **Spark Processing**: Processes data using PySpark
-4. **dbt Transformation**: Applies business logic transformations
-5. **Data Export**: Exports the processed data to files
+    subgraph "Data Pipeline Flow"
+        D --> |Stage 1| E[Data Generation]
+        E --> |Generate Random Data| E1[JSON File]
+        E1 --> |Stage 2| F[Data Ingestion]
+        F --> |Parse & Load| F1[In-Memory Dataset]
+        F1 --> |Stage 3| G[Spark Processing]
+        G --> |Calculate Metrics| G1[Processed Dataset]
+        G1 --> |Stage 4| H[DBT Transformation]
+        H --> |Apply Business Rules| H1[Transformed Dataset]
+        H1 --> |Stage 5| I[Data Export]
+        I --> |Export to File| I1[Final Output File]
+    end
+
+    subgraph "Message Queue"
+        J[RabbitMQ] <--> K[Celery Worker]
+        F --> |Optional Tasks| J
+        I --> |Optional Tasks| J
+    end
+
+    subgraph "Monitoring"
+        L[Datadog Agent] --> M[Datadog Dashboard]
+        L -.-> |Monitor| A
+        L -.-> |Monitor| B
+        L -.-> |Monitor| C
+        L -.-> |Monitor| D
+        L -.-> |Monitor| G
+        L -.-> |Monitor| J
+        L -.-> |Monitor| K
+    end
+```
+
+## Component Responsibilities
+
+| Component      | Technology        | Responsibility                                |
+| -------------- | ----------------- | --------------------------------------------- |
+| Web Interface  | FastAPI           | Provides UI to trigger and monitor pipelines  |
+| Database       | PostgreSQL        | Stores pipeline metadata and execution status |
+| Orchestration  | Prefect           | Manages workflow execution and monitoring     |
+| Queuing        | RabbitMQ + Celery | Handles asynchronous task distribution        |
+| Processing     | PySpark           | Performs distributed data processing          |
+| Transformation | dbt-core          | Applies business logic and transformations    |
+| Monitoring     | Datadog           | Collects metrics, traces, and logs            |
+
+## Pipeline Stages
+
+1. **Data Generation**:
+
+   - Creates random structured data in JSON format
+   - Simulates real-world data sources
+
+2. **Data Ingestion**:
+
+   - Reads and parses the input data
+   - Prepares data for processing
+
+3. **Spark Processing**:
+
+   - Performs distributed data processing
+   - Calculates key metrics and transformations
+   - Adds computed fields to each record
+
+4. **dbt Transformation**:
+
+   - Applies business rules and logic
+   - Categorizes and enriches the data
+   - Adds business-specific metrics
+
+5. **Data Export**:
+   - Writes the final processed data to output files
+   - Makes data available for downstream systems
 
 ## Prerequisites
 
@@ -104,9 +172,3 @@ You can modify the pipeline by:
 - Changing the number of records generated
 - Adding new transformation stages
 - Modifying the processing logic
-
-## Troubleshooting
-
-- If services fail to start, check the logs with `docker-compose logs <service-name>`
-- Ensure the required ports (8000, 5432, 5672, 15672, 4200, etc.) are available
-- Check that Docker has enough resources allocated
