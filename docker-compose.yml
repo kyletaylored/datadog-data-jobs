@@ -1,4 +1,40 @@
 services:
+  # FastAPI Web Application
+  webapp:
+    build: .
+    container_name: datadog-demo-web
+    command: sh -c "ddtrace-run uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    volumes:
+      - .:/app
+      - ./data:/app/data
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      init:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_ENGINE: ${DATABASE_ENGINE:-postgresql}
+      DATABASE_NAME: ${DATABASE_NAME:-datadog}
+      DATABASE_USERNAME: ${DATABASE_USERNAME:-datadog}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:-datadog}
+      DATABASE_HOST: ${DATABASE_HOST:-db}
+      DATABASE_PORT: ${DATABASE_PORT:-5432}
+      DD_ENV: ${DD_ENV:-demo}
+      DD_SERVICE: ${DD_SERVICE:-datadog-demo}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      DD_DBM_PROPAGATION_MODE: full
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
   # PostgreSQL Database
   db:
     image: postgres:13
@@ -71,30 +107,27 @@ services:
     labels:
       com.datadoghq.ad.logs: '[{"source": "spark", "service": "spark-worker"}]'
 
-  # Combined initialization service
-  init:
+  # Celery Worker
+  celery-worker:
     build: .
-    command: /app/init/run.sh
+    command: ddtrace-run celery -A app.worker.celery_app worker --loglevel=info
     volumes:
       - .:/app
       - ./data:/app/data
     depends_on:
-      db:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
-      prefect-server:
-        condition: service_started
-    user: root
+      - rabbitmq
+      - db
+      - init
     environment:
+      DATABASE_ENGINE: ${DATABASE_ENGINE:-postgresql}
       DATABASE_NAME: ${DATABASE_NAME:-datadog}
       DATABASE_USERNAME: ${DATABASE_USERNAME:-datadog}
       DATABASE_PASSWORD: ${DATABASE_PASSWORD:-datadog}
       DATABASE_HOST: ${DATABASE_HOST:-db}
       DATABASE_PORT: ${DATABASE_PORT:-5432}
-      PREFECT_API_URL: http://prefect-server:4200/api
       DD_ENV: ${DD_ENV:-demo}
-      DD_SERVICE: ${DD_SERVICE:-datadog-demo-init}
+      DD_SERVICE: ${DD_SERVICE:-datadog-demo-worker}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
     env_file:
       - .env
 
@@ -119,65 +152,6 @@ services:
       interval: 10s
       timeout: 10s
       retries: 5
-    env_file:
-      - .env
-
-  # FastAPI Web Application
-  webapp:
-    build: .
-    container_name: datadog-demo-web
-    volumes:
-      - .:/app
-      - ./data:/app/data
-    ports:
-      - "8000:8000"
-    depends_on:
-      db:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
-      init:
-        condition: service_completed_successfully
-    environment:
-      DATABASE_ENGINE: ${DATABASE_ENGINE:-postgresql}
-      DATABASE_NAME: ${DATABASE_NAME:-datadog}
-      DATABASE_USERNAME: ${DATABASE_USERNAME:-datadog}
-      DATABASE_PASSWORD: ${DATABASE_PASSWORD:-datadog}
-      DATABASE_HOST: ${DATABASE_HOST:-db}
-      DATABASE_PORT: ${DATABASE_PORT:-5432}
-      DD_ENV: ${DD_ENV:-demo}
-      DD_SERVICE: ${DD_SERVICE:-datadog-demo}
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      DD_DBM_PROPAGATION_MODE: full
-    env_file:
-      - .env
-    healthcheck:
-      test: ["CMD", "curl", "--fail", "http://localhost:8000/"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  # Celery Worker
-  celery-worker:
-    build: .
-    command: ddtrace-run celery -A app.worker.celery_app worker --loglevel=info
-    volumes:
-      - .:/app
-      - ./data:/app/data
-    depends_on:
-      - rabbitmq
-      - db
-      - init
-    environment:
-      DATABASE_ENGINE: ${DATABASE_ENGINE:-postgresql}
-      DATABASE_NAME: ${DATABASE_NAME:-datadog}
-      DATABASE_USERNAME: ${DATABASE_USERNAME:-datadog}
-      DATABASE_PASSWORD: ${DATABASE_PASSWORD:-datadog}
-      DATABASE_HOST: ${DATABASE_HOST:-db}
-      DATABASE_PORT: ${DATABASE_PORT:-5432}
-      DD_ENV: ${DD_ENV:-demo}
-      DD_SERVICE: ${DD_SERVICE:-datadog-demo-worker}
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
     env_file:
       - .env
 
@@ -208,6 +182,33 @@ services:
       PREFECT_CLIENT_SERVER_HOST: prefect-server
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     user: root
+    env_file:
+      - .env
+
+  # Combined initialization service
+  init:
+    build: .
+    command: /app/init/run.sh
+    volumes:
+      - .:/app
+      - ./data:/app/data
+    depends_on:
+      db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      prefect-server:
+        condition: service_started
+    user: root
+    environment:
+      DATABASE_NAME: ${DATABASE_NAME:-datadog}
+      DATABASE_USERNAME: ${DATABASE_USERNAME:-datadog}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:-datadog}
+      DATABASE_HOST: ${DATABASE_HOST:-db}
+      DATABASE_PORT: ${DATABASE_PORT:-5432}
+      PREFECT_API_URL: http://prefect-server:4200/api
+      DD_ENV: ${DD_ENV:-demo}
+      DD_SERVICE: ${DD_SERVICE:-datadog-demo-init}
     env_file:
       - .env
 
