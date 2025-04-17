@@ -16,8 +16,6 @@ from prefect.context import get_run_context
 logger = logging.getLogger(__name__)
 
 # Helper function to update pipeline status
-
-
 async def update_pipeline_status(
     pipeline_id: int,
     stage_name: Optional[str] = None,
@@ -331,9 +329,12 @@ async def run_data_pipeline_flow(pipeline_id: int, record_count: int = 1000):
     """
     Main flow that orchestrates the entire data pipeline
     """
+    import os
+    from app.pipeline.dbt_helpers import write_to_staging_table
+    from app.pipeline.metrics import read_transformed_metrics
+
     logger = get_run_logger()
-    logger.info(
-        f"Starting data pipeline {pipeline_id} with {record_count} records")
+    logger.info(f"Starting data pipeline {pipeline_id} with {record_count} records")
     print(f"Starting data pipeline {pipeline_id} with {record_count} records")
 
     try:
@@ -349,11 +350,10 @@ async def run_data_pipeline_flow(pipeline_id: int, record_count: int = 1000):
             db = SessionLocal()
             try:
                 crud.update_pipeline(
-                    db, pipeline_id, {"prefect_flow_run_id": str(flow_run_id)})
+                    db, pipeline_id, {"prefect_flow_run_id": str(flow_run_id)}
+                )
             finally:
                 db.close()
-
-        # Execute pipeline stages
 
         # Stage 1: Generate sample data
         input_file = await generate_data(pipeline_id=pipeline_id, records=record_count)
@@ -364,11 +364,18 @@ async def run_data_pipeline_flow(pipeline_id: int, record_count: int = 1000):
         # Stage 3: Process with Spark
         processed_data = await process_with_spark(pipeline_id=pipeline_id, data=data)
 
-        # Stage 4: Transform with dbt
-        transformed_data = await transform_with_dbt(pipeline_id=pipeline_id, data=processed_data)
+        # NEW: Write processed data to staging table in PostgreSQL
+        write_to_staging_table(processed_data)
 
-        # Stage 5: Export results
-        output_file = await export_results(pipeline_id=pipeline_id, data=transformed_data)
+        # Stage 4: Transform with dbt
+        await transform_with_dbt(pipeline_id=pipeline_id)
+
+        # OPTIONAL: Collect metrics from dbt run results
+        metrics = read_transformed_metrics()
+        logger.info(f"dbt model metrics: {metrics}")
+
+        # Stage 5: Export results (still using processed_data for now)
+        output_file = await export_results(pipeline_id=pipeline_id, data=processed_data)
 
         logger.info(f"Pipeline {pipeline_id} completed successfully")
         print(f"Pipeline {pipeline_id} completed successfully")
@@ -378,7 +385,6 @@ async def run_data_pipeline_flow(pipeline_id: int, record_count: int = 1000):
         logger.error(f"Pipeline {pipeline_id} failed: {e}")
         print(f"Pipeline {pipeline_id} failed: {e}")
 
-        # Update pipeline status to failed
         await update_pipeline_status(
             pipeline_id=pipeline_id,
             status="failed",
