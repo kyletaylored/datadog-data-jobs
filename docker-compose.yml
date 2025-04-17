@@ -2,7 +2,7 @@ services:
   # FastAPI Web Application
   webapp:
     build: .
-    container_name: datadog-demo-web
+    container_name: datadog-data-jobs-web
     command: sh -c "ddtrace-run uvicorn app.main:app --host 0.0.0.0 --port 8000"
     volumes:
       - .:/app
@@ -23,7 +23,6 @@ services:
       DATABASE_PASSWORD: ${DATABASE_PASSWORD:-datadog}
       DATABASE_HOST: ${DATABASE_HOST:-db}
       DATABASE_PORT: ${DATABASE_PORT:-5432}
-      DD_ENV: ${DD_ENV:-demo}
       DD_SERVICE: ${DD_SERVICE:-datadog-demo}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       DD_DBM_PROPAGATION_MODE: full
@@ -34,6 +33,8 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    labels:
+      com.datadoghq.ad.logs: '[{"source": "python", "service": "datadog-data-jobs-web"}]'
 
   # PostgreSQL Database
   db:
@@ -77,7 +78,7 @@ services:
 
   # Spark Master
   spark-master:
-    image: bitnami/spark:3.3.0
+    image: bitnami/spark:3.5
     environment:
       - SPARK_MODE=master
       - SPARK_RPC_AUTHENTICATION_ENABLED=no
@@ -87,12 +88,20 @@ services:
     ports:
       - "8080:8080"
       - "7077:7077"
+    volumes:
+      - ./logs/spark:/opt/bitnami/spark/logs
     labels:
-      com.datadoghq.ad.checks: '{"spark": {"instances": [{"spark_url": "%%host%%:8080", "cluster_name":"spark-master"}], "logs": [{"source": "spark", "service": "spark-master"}]}}'
+      com.datadoghq.ad.logs: >-
+        [{
+          "type": "file",
+          "path": "/opt/bitnami/spark/logs/spark-master.out",
+          "source": "spark",
+          "service": "spark-master"
+        }]
 
   # Spark Worker
   spark-worker:
-    image: bitnami/spark:3.3.0
+    image: bitnami/spark:3.5
     environment:
       - SPARK_MODE=worker
       - SPARK_MASTER_URL=spark://spark-master:7077
@@ -104,8 +113,16 @@ services:
       - SPARK_SSL_ENABLED=no
     depends_on:
       - spark-master
+    volumes:
+      - ./logs/spark:/opt/bitnami/spark/logs
     labels:
-      com.datadoghq.ad.logs: '[{"source": "spark", "service": "spark-worker"}]'
+      com.datadoghq.ad.logs: >-
+        [{
+          "type": "file",
+          "path": "/opt/bitnami/spark/logs/spark-worker.out",
+          "source": "spark",
+          "service": "spark-worker"
+        }]
 
   # Celery Worker
   celery-worker:
@@ -125,11 +142,12 @@ services:
       DATABASE_PASSWORD: ${DATABASE_PASSWORD:-datadog}
       DATABASE_HOST: ${DATABASE_HOST:-db}
       DATABASE_PORT: ${DATABASE_PORT:-5432}
-      DD_ENV: ${DD_ENV:-demo}
       DD_SERVICE: ${DD_SERVICE:-datadog-demo-worker}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     env_file:
       - .env
+    labels:
+      com.datadoghq.ad.logs: '[{"source": "python", "service": "celery-worker"}]'
 
   # Prefect Server and UI
   prefect-server:
@@ -137,8 +155,6 @@ services:
     command: prefect server start
     ports:
       - "4200:4200"
-    volumes:
-      - prefect_data:/root/.prefect
     environment:
       - PREFECT_ORION_DATABASE_CONNECTION_URL=${PREFECT_ORION_DATABASE_CONNECTION_URL:-postgresql+asyncpg://datadog:datadog@db:5432/datadog}
       - PREFECT_SERVER_API_HOST=0.0.0.0
@@ -154,6 +170,11 @@ services:
       retries: 5
     env_file:
       - .env
+    volumes:
+      - prefect_data:/root/.prefect
+      - ./logs/prefect:/root/.prefect/logs
+    labels:
+      com.datadoghq.ad.logs: '[{"type": "file", "path": "/root/.prefect/logs/prefect.log", "source": "prefect", "service": "prefect-server"}]'
 
   # Prefect Worker (replacing the old agent)
   prefect-worker:
@@ -175,7 +196,6 @@ services:
       DATABASE_PASSWORD: ${DATABASE_PASSWORD:-datadog}
       DATABASE_HOST: ${DATABASE_HOST:-db}
       DATABASE_PORT: ${DATABASE_PORT:-5432}
-      DD_ENV: ${DD_ENV:-demo}
       DD_SERVICE: ${DD_SERVICE:-datadog-demo-prefect}
       PREFECT_API_URL: http://prefect-server:4200/api
       # Force using localhost DNS as a backup
@@ -184,6 +204,8 @@ services:
     user: root
     env_file:
       - .env
+    labels:
+      com.datadoghq.ad.logs: '[{"source": "prefect", "service": "prefect-worker"}]'
 
   # Combined initialization service
   init:
@@ -207,10 +229,10 @@ services:
       DATABASE_HOST: ${DATABASE_HOST:-db}
       DATABASE_PORT: ${DATABASE_PORT:-5432}
       PREFECT_API_URL: http://prefect-server:4200/api
-      DD_ENV: ${DD_ENV:-demo}
       DD_SERVICE: ${DD_SERVICE:-datadog-demo-init}
     env_file:
       - .env
+  # dbt-core
   dbt:
     image: ghcr.io/dbt-labs/dbt-postgres:1.9.latest
     container_name: dbt-core
@@ -222,7 +244,13 @@ services:
     environment:
       DBT_PROFILES_DIR: /usr/app
     labels:
-      com.datadoghq.ad.logs: '[{"source": "dbt", "service": "dbt"}]'
+      com.datadoghq.ad.logs: >-
+        [{
+          "type": "file",
+          "path": "/usr/app/target/dbt.log",
+          "source": "dbt",
+          "service": "dbt"
+        }]
 
   # Datadog Agent (optional - only runs if DD_API_KEY is set)
   datadog-agent:
