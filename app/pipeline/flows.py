@@ -1,13 +1,12 @@
 import os
-import sys
 import json
 import time
 import random
-import asyncio
 import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 import logging
+import subprocess
 
 # Import Prefect
 from prefect import flow, task, get_run_logger
@@ -242,83 +241,21 @@ async def process_with_spark(pipeline_id: int, data: List[Dict[str, Any]]) -> Li
         raise
 
 
-@task(name="transform_with_dbt")
-async def transform_with_dbt(pipeline_id: int, data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """
-    Transform data using dbt
-
-    In a real scenario, this would use dbt to transform data in the database.
-    For this demo, we'll simulate the transformation.
-    """
+@task(name="transform_with_dbt", retries=1)
+async def transform_with_dbt(pipeline_id: int):
     logger = get_run_logger()
-    logger.info(f"Transforming data with dbt")
-
-    await update_pipeline_status(
-        pipeline_id=pipeline_id,
-        stage_name="DBT Transformation",
-        status="running",
-        message=f"Transforming data with dbt-core"
-    )
+    logger.info(f"Running dbt transformations inside 'dbt' container")
 
     try:
-        # In a real scenario, we would use dbt to transform data in the database
-        # For this demo, we'll simulate the process
-
-        # Simulate dbt processing time
-        time.sleep(2)
-
-        # Simulate dbt transformations
-        transformed_data = []
-        categories = {}
-
-        for record in data:
-            # Group by category for aggregation
-            category = record["category"]
-            if category not in categories:
-                categories[category] = []
-            categories[category].append(record)
-
-            # Apply transformations to individual records
-            transformed_record = record.copy()
-            transformed_record["is_high_value"] = record["total_value"] > 5000
-            transformed_record["tier"] = (
-                "premium" if record["total_value"] > 5000
-                else "standard" if record["total_value"] > 1000
-                else "basic"
-            )
-            transformed_record["transformed_by"] = "dbt"
-            transformed_record["transformed_at"] = datetime.datetime.now(
-            ).isoformat()
-            transformed_data.append(transformed_record)
-
-        # Add category aggregates
-        for category, records in categories.items():
-            avg_value = sum(r["total_value"] for r in records) / len(records)
-            for record in transformed_data:
-                if record["category"] == category:
-                    record["category_avg_value"] = avg_value
-
-        # Log statistics
-        logger.info(
-            f"Transformed {len(transformed_data)} records across {len(categories)} categories")
-
-        await update_pipeline_status(
-            pipeline_id=pipeline_id,
-            stage_name="DBT Transformation",
-            status="completed",
-            message=f"Successfully transformed {len(transformed_data)} records"
+        result = subprocess.run(
+            ["docker", "exec", "dbt", "dbt", "run", "--project-dir", "/usr/app"],
+            capture_output=True,
+            text=True,
+            check=True
         )
-
-        return transformed_data
-
-    except Exception as e:
-        logger.error(f"Error transforming data with dbt: {e}")
-        await update_pipeline_status(
-            pipeline_id=pipeline_id,
-            stage_name="DBT Transformation",
-            status="failed",
-            message=f"Error transforming data: {str(e)}"
-        )
+        logger.info(result.stdout)
+    except subprocess.CalledProcessError as e:
+        logger.error(f"dbt failed:\n{e.stderr}")
         raise
 
 

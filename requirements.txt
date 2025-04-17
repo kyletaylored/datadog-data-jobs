@@ -33,3 +33,4 @@ faker
 
 # Monitoring (Datadog)
 ddtrace
+datadog

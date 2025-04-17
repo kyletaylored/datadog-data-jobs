@@ -211,12 +211,26 @@ services:
       DD_SERVICE: ${DD_SERVICE:-datadog-demo-init}
     env_file:
       - .env
+  dbt:
+    image: ghcr.io/dbt-labs/dbt-postgres:1.9.latest
+    container_name: dbt-core
+    volumes:
+      - ./dbt_project:/usr/app
+    working_dir: /usr/app
+    depends_on:
+      - db
+    environment:
+      DBT_PROFILES_DIR: /usr/app
+    labels:
+      com.datadoghq.ad.logs: '[{"source": "dbt", "service": "dbt"}]'
 
   # Datadog Agent (optional - only runs if DD_API_KEY is set)
   datadog-agent:
     image: gcr.io/datadoghq/agent:7
     container_name: datadog-agent
     pid: "host"
+    ports:
+      - 5002:5002
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /proc/:/host/proc/:ro
@@ -233,6 +247,7 @@ services:
       - DD_HOSTNAME_TRUST_UTS_NAMESPACE=true
       - DD_APM_NON_LOCAL_TRAFFIC=true
       - DD_DOGSTATSD_NON_LOCAL_TRAFFIC=true
+      - DD_GUI_PORT=5002
     privileged: true
     healthcheck:
       test: ["CMD", "agent", "health"]
@@ -240,6 +255,9 @@ services:
       timeout: 10s
       retries: 3
     restart: unless-stopped
+    # Only start the agent if an API key is provided
+    profiles:
+      - with-datadog
 
 volumes:
   postgres_data:
